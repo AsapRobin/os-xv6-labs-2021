@@ -6,6 +6,10 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
+
+uint64 sum_free_mem();
+uint64 sum_nproc();
 
 uint64
 sys_exit(void)
@@ -94,4 +98,44 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+uint64
+sys_trace(void)
+{
+  int mask;
+  // 取 a0 寄存器中的值返回给 mask
+  //argint函数用于提取系统调用参数
+  if(argint(0,&mask)<0){
+    return -1;
+  }
+  
+  // 把 mask 传给现有进程的 trace_mask
+  struct proc *p=myproc();//获取当前进程
+  p->trace_mask=mask;
+  
+  return 0;
+}
+
+uint64
+sys_sysinfo(void)
+{
+  uint64 addr;
+  struct sysinfo info;
+  struct proc *p=myproc();
+
+  //获取当前系统的空闲内存和活动进程数，并存储在 info 结构体中
+  info.freemem=sum_free_mem();
+  info.nproc=sum_nproc();
+
+  //获取系统调用参数，确定用户空间的目标地址
+  if(argaddr(0, &addr) < 0)
+    return -1;
+  
+  //将 info 结构体的数据从内核空间复制到用户空间
+  if(copyout(p->pagetable, addr, (char *)&info, sizeof(info)) < 0)
+      return -1;
+
+  
+  return 0;
 }

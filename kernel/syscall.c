@@ -104,6 +104,8 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_wait(void);
 extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
+extern uint64 sys_trace(void);
+extern uint64 sys_sysinfo(void);
 
 static uint64 (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -127,17 +129,34 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_trace]   sys_trace,
+[SYS_sysinfo] sys_sysinfo,
 };
+
+static char *syscall_names[] = {
+  "fork", "exit", "wait", "pipe", 
+  "read", "kill", "exec", "fstat", "chdir", 
+  "dup", "getpid", "sbrk", "sleep", "uptime", 
+  "open", "write", "mknod", "unlink", "link", 
+  "mkdir", "close", "trace","sysinfo"};
+
+
 
 void
 syscall(void)
 {
-  int num;
-  struct proc *p = myproc();
+  int num;//存储系统调用号
+  struct proc *p = myproc();//p 是一个指向当前进程结构体的指针，通过调用 myproc() 获取当前正在运行的进程。
 
   num = p->trapframe->a7;
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
-    p->trapframe->a0 = syscalls[num]();
+    p->trapframe->a0=syscalls[num]();//将系统调用的返回值存储在a0寄存器
+    
+    //检查当前系统调用编号 num 是否在 p->mask 中被设置
+    if((1<<num) & p->trace_mask){
+      printf("%d: syscall %s -> %d\n",p->pid,syscall_names[num-1],p->trapframe->a0);
+    }
+    
   } else {
     printf("%d %s: unknown sys call %d\n",
             p->pid, p->name, num);

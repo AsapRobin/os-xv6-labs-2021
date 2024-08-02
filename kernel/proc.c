@@ -164,6 +164,7 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  p->trace_mask=0;
 }
 
 // Create a user page table for a given process,
@@ -291,6 +292,9 @@ fork(void)
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
+
+  np->trace_mask=p->trace_mask;
+
 
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
@@ -653,4 +657,22 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+//遍历所有的进程，检查每个进程的状态是否是活动的
+uint64
+sum_nproc(){
+  struct proc *p;
+  uint64 count=0;
+  //proc 是一个进程表数组，包含系统中所有的进程结构体
+  for(p = proc; p < &proc[NPROC]; p++) {
+    //在检查进程状态之前，获取进程的锁以确保对进程状态的访问是安全的
+    acquire(&p->lock);
+    if(p->state != UNUSED) {
+     count++;
+    } 
+    //释放进程锁
+    release(&p->lock);
+  }
+  return count;
 }
