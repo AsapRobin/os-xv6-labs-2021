@@ -1,4 +1,21 @@
 struct stat;
+struct context{
+    uint64 ra;//return address 当前线程的返回地址
+    uint64 sp;//stack pointer 当前线程的栈顶指针
+    //callee-save寄存器，用于保存和恢复寄存器的状态
+    uint64 s0;
+    uint64 s1;
+    uint64 s2;
+    uint64 s3;
+    uint64 s4;
+    uint64 s5;
+    uint64 s6;
+    uint64 s7;
+    uint64 s8;
+    uint64 s9;
+    uint64 s10;
+    uint64 s11;
+};
 struct rtcdate;
 
 // system calls

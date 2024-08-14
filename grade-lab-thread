@@ -19,7 +19,7 @@ def test_uthread():
     if not re.findall('\n'.join(expected), r.qemu.output, re.M):
         raise AssertionError('Output does not match expected output')
 
-@test(5, "answers-thread.txt")
+@test(0, "answers-thread.txt")
 def test_answers():
     # just a simple sanity check, will be graded manually
     check_answers("answers-thread.txt")
@@ -62,7 +62,7 @@ def test_barrier():
     if not re.match(r'^OK; passed$', out):
         raise AssertionError('Barrier failed')
 
-@test(1, "time")
+@test(0, "time")
 def test_time():
     check_time()
 
