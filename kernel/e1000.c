@@ -102,8 +102,39 @@ e1000_transmit(struct mbuf *m)
   // the TX descriptor ring so that the e1000 sends it. Stash
   // a pointer so that it can be freed after sending.
   //
+
+
+  acquire(&e1000_lock); // 上锁以保证操作的原子性
+
+  int index = regs[E1000_TDT]; // 读取当前环形缓冲区（TX ring）的索引
   
-  return 0;
+  // 检查当前描述符是否可用，即检查 E1000_TXD_STAT_DD 标志位是否被设置
+  if(!(tx_ring[index].status & E1000_TXD_STAT_DD)){
+    release(&e1000_lock);
+    return -1; // 如果不可用，返回 -1 表示发送失败
+  }
+  
+  // 如果存在旧的 mbuf，调用 mbuffree() 释放它，避免内存泄漏
+  if(tx_mbufs[index])
+    mbuffree(tx_mbufs[index]);
+  
+  // 将当前 mbuf 存储到 tx_mbufs 数组中，以便稍后释放
+  tx_mbufs[index] = m;
+
+  // 将数据包的地址（m->head）和长度（m->len）写入描述符
+  tx_ring[index].addr = (uint64)m->head;
+  tx_ring[index].length = m->len;
+
+  // 设置描述符的控制命令标志（cmd），确保 E1000 发送这个数据包
+  tx_ring[index].cmd = E1000_TXD_CMD_RS | E1000_TXD_CMD_EOP;
+  tx_ring[index].status = 0; // 清除状态，以便硬件更新
+
+  // 更新环形缓冲区的 TDT（发射描述符尾指针），以指向下一个描述符
+  regs[E1000_TDT] = (index + 1) % TX_RING_SIZE;
+
+  release(&e1000_lock); // 解锁
+
+  return 0; // 成功发送数据包，返回 0
 }
 
 static void
@@ -115,6 +146,27 @@ e1000_recv(void)
   // Check for packets that have arrived from the e1000
   // Create and deliver an mbuf for each packet (using net_rx()).
   //
+  while(1){
+    int index = (regs[E1000_RDT] + 1) % RX_RING_SIZE;//获取索引的下一个位置
+
+    if(!(rx_ring[index].status & E1000_RXD_STAT_DD)) //当前ring buffer不可用
+      return;
+    
+    rx_mbufs[index]->len = rx_ring[index].length;
+
+    net_rx(rx_mbufs[index]);
+    rx_mbufs[index] = mbufalloc(0); 
+    if(!rx_mbufs[index])
+      panic("e1000");
+      
+    rx_ring[index].status = 0;
+    rx_ring[index].addr = (uint64)rx_mbufs[index]->head;
+    
+    
+    regs[E1000_RDT] = index;//更新索引
+
+  }
+
 }
 
 void
