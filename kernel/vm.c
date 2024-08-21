@@ -5,7 +5,11 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
-
+#include "fcntl.h"
+#include "spinlock.h"
+#include "sleeplock.h"
+#include "file.h"
+#include "proc.h"
 /*
  * the kernel's page table.
  */
@@ -430,5 +434,51 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return 0;
   } else {
     return -1;
+  }
+}
+
+//解除一个进程的虚拟内存区域（VMA）的映射
+//并根据需要将内存中的数据写回到磁盘
+void
+vmaunmap(pagetable_t pagetable, uint64 va, uint64 nbytes, struct vma *v)
+{
+  uint64 a;
+  pte_t *pte;
+
+
+  for(a = va; a < va + nbytes; a += PGSIZE){   
+    if((pte = walk(pagetable, a, 0)) == 0)    
+      panic("sys_munmap: walk");               
+
+    if(PTE_FLAGS(*pte) == PTE_V)               // 检查 PTE 的标志位是否为 PTE_V。如果是，说明这个 PTE 不是叶子节点（可能指向下一级页表），应当触发 panic。
+      panic("sys_munmap: not a leaf");
+
+    if(*pte & PTE_V){                          // 检查 PTE 是否有效（PTE_V 标志）。如果有效，表示该页被映射到了物理内存中。
+      uint64 pa = PTE2PA(*pte);                // 从 PTE 中提取物理地址 pa。
+
+      // 检查页面是否为 "脏" 页（即内存中有对数据的修改），并且映射方式是 MAP_SHARED（共享映射）。
+      if((*pte & PTE_D) && (v->flags & MAP_SHARED)) {
+        begin_op();                            
+        ilock(v->f->ip);                      
+        
+        // 计算相对 vma 起始地址的偏移量 off
+        uint64 off = a - v->vastart;
+
+        // 将脏页的数据写回到磁盘文件中。
+        if(off < 0) { // 如果第一页不是完整的 4KB 页面
+          writei(v->f->ip, 0, pa + (-off), v->offset, PGSIZE + off);
+        } else if(off + PGSIZE > v->sz){  // 如果最后一页不是完整的 4KB 页面
+          writei(v->f->ip, 0, pa, v->offset + off, v->sz - off);
+        } else { // 正常的完整 4KB 页面
+          writei(v->f->ip, 0, pa, v->offset + off, PGSIZE);
+        }
+
+        iunlock(v->f->ip);                   // 解锁 inode
+        end_op();                            // 结束文件系统操作
+      }
+
+      kfree((void*)pa);                      // 释放物理内存页。
+      *pte = 0;                              // 将页表项清空，解除映射。
+    }
   }
 }
