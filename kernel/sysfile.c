@@ -304,22 +304,46 @@ sys_open(void)
       return -1;
     }
   } else {
-    if((ip = namei(path)) == 0){
-      end_op();
-      return -1;
+    int symlink_depth = 0;  // 初始化符号链接递归深度计数器，防止循环递归
+    while(1) { 
+       // 获取路径对应的 inode，可能是文件、目录或符号链接
+      if((ip = namei(path)) == 0){
+        // 如果路径无效或不存在，结束操作并返回错误
+        end_op();
+        return -1;
+      }
+      ilock(ip);  // 锁定 inode，防止其他进程并发修改
+    
+      // 如果 inode 类型为符号链接，并且没有设置 O_NOFOLLOW 标志
+      if(ip->type == T_SYMLINK && (omode & O_NOFOLLOW) == 0) {
+        // 增加符号链接递归深度计数器，超过 10 次则终止以防止循环
+        if(++symlink_depth > 10) {
+            // 解锁并释放当前 inode，结束操作并返回错误
+            iunlockput(ip);
+            end_op();
+            return -1;
+        }
+        
+        // 从符号链接的 inode 中读取目标路径，并更新到 path 变量
+        if(readi(ip, 0, (uint64)path, 0, MAXPATH) < 0) {
+            // 如果读取失败，解锁并释放 inode，结束操作并返回错误
+            iunlockput(ip);
+            end_op();
+            return -1;
+        }
+        
+        // 解锁并释放当前符号链接的 inode，继续处理更新后的目标路径
+        iunlockput(ip);
+      } else {
+        // 如果不是符号链接，或者设置了 O_NOFOLLOW，则跳出循环
+        break;
+      }
     }
-    ilock(ip);
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
       end_op();
       return -1;
     }
-  }
-
-  if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
-    iunlockput(ip);
-    end_op();
-    return -1;
   }
 
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
@@ -482,5 +506,36 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+
+
+uint64
+sys_symlink(void)
+{
+  struct inode *ip;
+  char target[MAXPATH], path[MAXPATH];
+  //存储符号链接的目标路径和符号链接的路径
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+    return -1;
+
+  begin_op();//开始一个文件系统操作
+
+  ip = create(path, T_SYMLINK, 0, 0);//建一个新的文件
+  if(ip == 0){
+    end_op();
+    return -1;
+  }
+
+  //将目标路径写入到新创建的符号链接文件中
+  if(writei(ip, 0, (uint64)target, 0, strlen(target)) < 0) {
+    end_op();
+    return -1;
+  }
+
+  iunlockput(ip);//释放了对 inode 的锁
+
+  end_op();//结束文件操作
   return 0;
 }
