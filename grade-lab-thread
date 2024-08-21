@@ -62,7 +62,7 @@ def test_barrier():
     if not re.match(r'^OK; passed$', out):
         raise AssertionError('Barrier failed')
 
-@test(0, "time")
+@test(1, "time")
 def test_time():
     check_time()
 
