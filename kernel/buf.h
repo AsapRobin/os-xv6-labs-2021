@@ -5,8 +5,9 @@ struct buf {
   uint blockno;
   struct sleeplock lock;
   uint refcnt;
+  uint lastuse; // *newly added, used to keep track of the least-recently-used buf
+  struct buf *next;
   uchar data[BSIZE];
-
-  uint prev_use_time; // 记录上一次使用的时间，时间戳
-  struct buf * next; // 记录下一个节点
 };
+
+

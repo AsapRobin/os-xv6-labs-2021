@@ -67,12 +67,14 @@ kfree(void *pa)
   //关中断，获取当前CPU的id
   push_off();
   int i = cpuid();
-  pop_off();
+  
   
   acquire(&kmemList[i].lock);
   r->next = kmemList[i].freelist;
   kmemList[i].freelist = r;
   release(&kmemList[i].lock);
+
+  pop_off();
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -113,6 +115,5 @@ kalloc(void)
 
   if (r)
     memset((char*)r, 5, PGSIZE); // fill with junk
-
   return (void*)r;
 }
